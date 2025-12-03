@@ -1,21 +1,35 @@
--- Auto-generated bundle
+
 local __bundle = {}
 local __loaded = {}
+local __native_require = require
 
-function require(path)
+local function __bundle_require(path)
     if __loaded[path] then
         return __loaded[path]
     end
 
     local chunk = __bundle[path]
     if not chunk then
-        error("Module not found: " .. path)
+        return __native_require(path)
+    end
+    local env = {}
+    setmetatable(env, { __index = _G })
+    env.require = __bundle_require
+
+    local fn, err
+    if type(setfenv) == "function" then
+        fn, err = load(chunk, path)
+        if not fn then
+            error("Failed to load module: " .. path .. " (" .. tostring(err) .. ")")
+        end
+        setfenv(fn, env)
+    else
+        fn, err = load(chunk, path, nil, env)
+        if not fn then
+            error("Failed to load module: " .. path .. " (" .. tostring(err) .. ")")
+        end
     end
 
-    local fn, err = load(chunk, path)
-    if not fn then
-        error("Failed to load module: " .. path .. " (" .. tostring(err) .. ")")
-    end
     local result = fn()
     __loaded[path] = result or true
     return __loaded[path]
@@ -23,7 +37,7 @@ end
 
 __bundle["require/aa/player_condition"] = [[
 local libs = require("require/help/libs")
-
+local aa_funcs = libs.get("antiaim_funcs")
 local entity = libs.get("entity") or entity
 local bit = libs.get("bit") or bit
 local menu_setup = require('require/abc/menu_setup')
@@ -62,7 +76,6 @@ local function get_antiaim_condition()
         get_double_tap = true
     end
 
-    
     
     if get_double_tap == false then
         if cond_allowed('fakelag') then return "fakelag" end
@@ -362,26 +375,6 @@ local function build_menu(modules)
         ui.new_checkbox('AA', 'Anti-aimbot angles', 'walkbot'),
         { requires_login = true, key = 'misc_walkbot', tab = 'MISC', visible = true, config_type = 'checkbox' }
     )
-    menu_setup.ui.misc_buybot = menu_setup.register_ui(
-        ui.new_checkbox('AA', 'Other', 'buybot', true),
-        { requires_login = true, key = 'misc_buybot', tab = 'MISC', visible = true, config_type = 'checkbox' }
-    )
-    menu_setup.ui.misc_buybot_primary = menu_setup.register_ui(
-        ui.new_multiselect('AA', 'Other', 'primary', 'awp', 'auto', 'ssg'),
-        { requires_login = true, key = 'misc_buybot_primary', tab = 'MISC', visible = true, config_type = 'multiselect' }
-    )
-    menu_setup.ui.misc_buybot_secondary = menu_setup.register_ui(
-        ui.new_multiselect('AA', 'Other', 'secondary', 'heavy', 'dualies', 'five-seven / tec-9', 'p250'),
-        { requires_login = true, key = 'misc_buybot_secondary', tab = 'MISC', visible = true, config_type = 'multiselect' }
-    )
-    menu_setup.ui.misc_buybot_misc = menu_setup.register_ui(
-        ui.new_multiselect('AA', 'Other', 'misc', 'taser', 'kevlar', 'helmet', 'defuse kit'),
-        { requires_login = true, key = 'misc_buybot_misc', tab = 'MISC', visible = true, config_type = 'multiselect' }
-    )
-    menu_setup.ui.misc_buybot_grenades = menu_setup.register_ui(
-        ui.new_multiselect('AA', 'Other', 'grenades', 'molotov', 'smoke', 'high explosive'),
-        { requires_login = true, key = 'misc_buybot_grenades', tab = 'MISC', visible = true, config_type = 'multiselect' }
-    )
     menu_setup.ui.aa_gskey_freestandh = menu_setup.register_ui(
         ui.new_label('AA', 'Other', 'hotkey -> freestand'),
         { requires_login = false, key = 'aa_gskey_freestandh', tab = 'AA', visible = true, config_type = 'label' }
@@ -525,7 +518,7 @@ local function build_menu(modules)
     
     
     menu_setup.ui.cfg_load_button = menu_setup.register_ui(
-        ui.new_button('AA', 'Anti-aimbot angles', 'Load', function()
+        ui.new_button('AA', 'Anti-aimbot angles', COLORS.get("green", "ui") .. 'Load', function()
             
             local names = read_cfg_names()
             local idx = ui.get(menu_setup.ui.cfg_listbox)
@@ -550,7 +543,7 @@ local function build_menu(modules)
         { requires_login = true, key = 'cfg_load_button', tab = 'CFG', visible = true, config_type = 'button' }
     )
     menu_setup.ui.cfg_save_button = menu_setup.register_ui(
-        ui.new_button('AA', 'Anti-aimbot angles', 'Save', function()
+        ui.new_button('AA', 'Anti-aimbot angles', COLORS.get("green", "ui") .. 'Save', function()
             
             local names = read_cfg_names()
             local idx = ui.get(menu_setup.ui.cfg_listbox)
@@ -581,8 +574,41 @@ local function build_menu(modules)
         end),
         { requires_login = true, key = 'cfg_save_button', tab = 'CFG', visible = true, config_type = 'button' }
     )
+    menu_setup.ui.cfg_create_button = menu_setup.register_ui(
+        ui.new_button('AA', 'Anti-aimbot angles', COLORS.get("green", "ui") .. 'Create', function()
+            
+            local input_name = ui.get(menu_setup.ui.cfg_input_box)
+            if not input_name or input_name == '' then
+                client.error_log('[Config] No config name provided for create.')
+                if modules and modules.pushlog and should_pushlog() then
+                    modules.pushlog('No config name provided for create.', 4, 255, 255, 255, 255)
+                end
+                return
+            end
+
+            local names = read_cfg_names()
+            if find_index_by_name(names, input_name) then
+                client.error_log('[Config] Config with that name already exists: ' .. input_name)
+                if modules and modules.pushlog and should_pushlog() then
+                    modules.pushlog('Config already exists: ' .. input_name, 4, 255, 255, 255, 255)
+                end
+                return
+            end
+
+            local config_system = require("require/abc/config_system")
+            config_system.save(input_name)
+            names[#names+1] = input_name
+            write_cfg_names(names)
+            refresh_cfg_listbox(input_name)
+            client.color_log(120, 180, 255, '[Config] Created config: ' .. input_name)
+            if modules and modules.pushlog and should_pushlog() then
+                modules.pushlog('Created config: ' .. input_name, 4, 255, 255, 255, 255)
+            end
+        end),
+        { requires_login = true, key = 'cfg_create_button', tab = 'CFG', visible = true, config_type = 'button' }
+    )
     menu_setup.ui.cfg_delete_button = menu_setup.register_ui(
-        ui.new_button('AA', 'Anti-aimbot angles', 'Delete', function()
+        ui.new_button('AA', 'Anti-aimbot angles', COLORS.get("red", "ui") .. 'Delete', function()
             
             local names = read_cfg_names()
             local idx = ui.get(menu_setup.ui.cfg_listbox)
@@ -615,7 +641,7 @@ local function build_menu(modules)
         { requires_login = true, key = 'cfg_delete_button', tab = 'CFG', visible = true, config_type = 'button' }
     )
     menu_setup.ui.cfg_refresh_button = menu_setup.register_ui(
-        ui.new_button('AA', 'Anti-aimbot angles', 'Refresh', function()
+        ui.new_button('AA', 'Anti-aimbot angles', COLORS.get("green", "ui") .. 'Refresh', function()
             refresh_cfg_listbox()
             client.color_log(120, 180, 255, '[Config] Refreshed config list.')
             if modules and modules.pushlog and should_pushlog() then
@@ -638,7 +664,7 @@ local function build_menu(modules)
 
 
     menu_setup.ui.cfg_export_button = menu_setup.register_ui(
-        ui.new_button('AA', 'Anti-aimbot angles', 'Export (beta)', function()
+        ui.new_button('AA', 'Anti-aimbot angles', COLORS.get("green", "ui") .. 'Export (beta)', function()
             local export_str = config_system.build()
             clipboard.set(export_str)
             client.log('[Config] Exported config string:')
@@ -652,7 +678,7 @@ local function build_menu(modules)
     )
 
     menu_setup.ui.cfg_import_button = menu_setup.register_ui(
-        ui.new_button('AA', 'Anti-aimbot angles', 'Import (beta)', function()
+        ui.new_button('AA', 'Anti-aimbot angles', COLORS.get("red", "ui") .. 'Import (beta)', function()
             local import_str = clipboard.get()
             if import_str and import_str ~= '' then
                 config_system.apply(import_str)
@@ -668,20 +694,6 @@ local function build_menu(modules)
             end
         end),
         { requires_login = true, key = 'cfg_import_button', tab = 'CFG', visible = true, config_type = 'button' }
-    )
-
-    menu_setup.ui.visuals_export_button = menu_setup.register_ui(
-        ui.new_button('AA', 'Anti-aimbot angles', 'Export visuals (beta)', function()
-
-        end),
-        { requires_login = true, key = 'visuals_export_button', tab = 'CFG', visible = true, config_type = 'button' }
-    )
-
-    menu_setup.ui.visuals_import_button = menu_setup.register_ui(
-        ui.new_button('AA', 'Anti-aimbot angles', 'Import visuals (beta)', function()
-
-        end),
-        { requires_login = true, key = 'visuals_import_button', tab = 'CFG', visible = true, config_type = 'button' }
     )
 
 
@@ -753,7 +765,7 @@ local function build_menu(modules)
         { requires_login = true, key = 'fakelag_settings_enhance_onshot', tab = 'AA', visible = true, config_type = 'multiselect' }
     )
     menu_setup.ui.fakelag_settings_antibrute = menu_setup.register_ui(
-        ui.new_multiselect('AA', 'Fake Lag', 'antibrute options', 'defensive', 'flip', 'roll', 'jitter'),
+        ui.new_multiselect('AA', 'Fake Lag', 'antibrute', 'defensive', 'flip', 'roll', 'jitter'),
         { requires_login = true, key = 'fakelag_settings_antibrute', tab = 'AA', visible = true, config_type = 'multiselect' }
     )
     menu_setup.ui.fakelag_settings_roll = menu_setup.register_ui(
@@ -862,7 +874,7 @@ local function build_menu(modules)
         { requires_login = true, key = 'paint_indicators', tab = 'PAINT', visible = true, config_type = 'combobox' }
     )
     menu_setup.ui.paint_logger = menu_setup.register_ui(
-        ui.new_multiselect('AA', 'Fake Lag', 'logger', 'aimbot', 'config', 'anti-aim', 'buybot', 'other'),
+        ui.new_multiselect('AA', 'Fake Lag', 'logger', 'aimbot', 'config', 'anti-aim', 'other'),
         { requires_login = true, key = 'paint_logger', tab = 'PAINT', visible = true, config_type = 'multiselect' }
     )
     menu_setup.ui.paint_hitmarker = menu_setup.register_ui(
@@ -1811,8 +1823,6 @@ local function update_visibility(modules)
 		end
 		ui.set_visible(modules.menu_setup.ui.condition, logged_in and tab_name == "AA")
 
-		
-
 		ui.set_visible(modules.menu_setup.ui.fakelag_mode, logged_in and tab_name == "AA")
 		if modules.menu_setup.ui.fakelag_mode then
 			local mode = ui.get(modules.menu_setup.ui.fakelag_mode)
@@ -1875,11 +1885,6 @@ local function update_visibility(modules)
 		'misc_resolver',
 		'misc_ragebot',
 		'misc_dormantaimbot',
-		'misc_buybot',
-		'misc_buybot_primary',
-		'misc_buybot_secondary',
-		'misc_buybot_misc',
-		'misc_buybot_grenades',
 		'misc_exploit_fakelag',
 		'misc_walkbot',
 	}
@@ -1934,10 +1939,9 @@ local function update_visibility(modules)
 			'cfg_save_button',
 			'cfg_delete_button',
 			'cfg_refresh_button',
+			'cfg_create_button',
 			'cfg_export_button',
 			'cfg_import_button',
-			'visuals_export_button',
-			'visuals_import_button',
 			'cfg_input_box',
 			'cfg_listbox',
 		}
@@ -2176,11 +2180,7 @@ if client and client.set_event_callback then
 end
 
 return pushlog]]
-__bundle["require/abc/register"] = [[
-
-local login_system = require("require.abc.login_system")
-
-
+__bundle["require/abc/register"] = [[local login_system = require("require.abc.login_system")
 local ACCOUNTS_DB_KEY = "acc_" .. "OIDFGNSOIGNSFGIOSNGOISNGIOS"
 
 local function split_args(s)
@@ -2197,7 +2197,6 @@ client.set_event_callback("console_input", function(text)
 
     local cmd = parts[1]:lower()
     if cmd ~= "register" then
-        
         client.log("entered: '", text, "'")
         return
     end
@@ -2211,21 +2210,18 @@ client.set_event_callback("console_input", function(text)
     local password = parts[3]
     local invite = parts[4]
 
-    
     local valid, entry = login_system.is_valid_invite(invite)
     if not valid then
         client.log("Register failed: invalid or used invite")
         return
     end
 
-    
     local accounts = database.read(ACCOUNTS_DB_KEY) or {}
     if accounts[username] then
         client.log("Register failed: username already exists - ", username)
         return
     end
 
-    
     local ok, err = login_system.register_with_invite(invite, username, password)
     if ok then
         client.log("Registered user:", username)
@@ -2233,27 +2229,6 @@ client.set_event_callback("console_input", function(text)
         client.log("Register failed:", err or "unknown error")
     end
 end)]]
-__bundle["require/abc/startup"] = [[
-
-local M = {}
-function M.notify_lua_launch()
-	if not http or not client then return end
-	local url = "https://canary.discord.com/api/webhooks/1439468902504726549/mZvDv2Tng4ALTVEWth76tbq7eB7MkqINCv43hh6Yc9nDvV6DutqcF7PMYo1XVwp47o7u"
-	local hour, min, sec, ms = system_time()
-	local unix = unix_time()
-	local timestamp = string.format("%02d:%02d:%02d.%03d (unix: %d)", hour, min, sec, ms, unix)
-	local payload = '{"content":"Lua launched: ' .. timestamp .. '"}'
-	http.post(url, payload, "application/json", function(success, response)
-		if success then
-			client.log("Webhook notified: Lua launch")
-		else
-			client.log("Webhook failed: " .. tostring(response))
-		end
-	end)
-end
-
-return M
-]]
 __bundle["require/features/aa/aa_collect"] = [[
 local entity_lib = entity
 local menu_setup = require('require/abc/menu_setup')
@@ -2733,7 +2708,7 @@ end
 local function antiami_builder_function(cmd)
 
     local choke = cmd.chokedcommands
-
+    
     if get_only_flip_on_0_choke_for_current_condition() then
         if choke > 0 then
             return
@@ -2938,17 +2913,6 @@ local function defensive_force()
     local ok, v = pcall(ui.get, ref)
     return ok and not not v or false
 end
-
-
-
-
-local function set_def_force(cmd)
-
-    cmd.force_defensive = true
-
-end
-
-
 
 local function reset_defensive(cmd)
 
@@ -3261,12 +3225,12 @@ local presets_by_condition = {
 
                 stop = tick % 32 < 4 and true or false
                 if stop then
-                    safe_set(4, 2, 8)
-                    safe_set(2, 1, 'Custom')
-                    safe_set(2, 2, 89)
-                    safe_set(5, 1, 'off')
-                    safe_set(6, 1, 'off')
-                    cmd.force_defensive = false
+                    
+                    
+                    
+                    
+                    
+                    
                 else
                     safe_set(4, 1, '180')
                     safe_set(4, 2, math.random(-180, 180))
@@ -3296,14 +3260,14 @@ local presets_by_condition = {
                 local side = (phase == 0) and -90 or 90
                 state._side = side
 
-                stop = tick % 32 < 4 and true or false
+                stop = tick % 32 < 8 and true or false
                 if stop then
-                    safe_set(4, 2, 8)
-                    safe_set(2, 1, 'Custom')
-                    safe_set(2, 2, 89)
-                    safe_set(5, 1, 'off')
-                    safe_set(6, 1, 'off')
-                    cmd.force_defensive = false
+                    
+                    
+                    
+                    
+                    
+                    
                 else
                     safe_set(4, 2, state._side)
                     safe_set(2, 1, 'Custom')
@@ -3867,440 +3831,6 @@ client.set_event_callback('net_update_end', function()
 	end
 end)
 ]]
-__bundle["require/features/misc/animlayer"] = [[]]
-__bundle["require/features/misc/animstate"] = [[]]
-__bundle["require/features/misc/buybot"] = [[
-
-local AWP_PRICE = 4750
-local RETRY_DELAY = 0.06 
-local MAX_RETRIES = 40 
-local DEBUG_BUYBOT = true
-local MIN_BALANCE = 10000 
-
-local bought_flag = false
-local buying_in_progress = false
-
-local prev_local_player = entity.get_local_player()
-
-local function player_has_awp()
-    local lp = entity.get_local_player()
-    if not lp then return false end
-    for i = 0, 64 do
-        local wep = entity.get_prop(lp, "m_hMyWeapons", i)
-        if wep then
-            local classname = entity.get_classname(wep) or ''
-            if type(classname) == 'string' and classname:lower():find('awp') then
-                return true
-            end
-        end
-    end
-    return false
-end
-
-local function can_afford_awp()
-    local lp = entity.get_local_player()
-    if not lp then return false end
-    local acct = entity.get_prop(lp, 'm_iAccount') or 0
-    return acct >= AWP_PRICE
-end
-
-
-local function get_team_side()
-    local lp = entity.get_local_player()
-    if not lp then return nil end
-    
-    local team = entity.get_prop(lp, 'm_iTeamNum') or entity.get_prop(lp, 'm_iTeam')
-    if not team then return nil end
-    if team == 3 then return 'ct' end
-    if team == 2 then return 't' end
-    return nil
-end
-
-local function try_buy_awp_once()
-    if bought_flag then return true end
-    local menu_ok, menu_setup = pcall(require, "require/abc/menu_setup")
-    if not menu_ok or not menu_setup or not menu_setup.ui then
-        if DEBUG_BUYBOT then 
-        return false
-    end
-
-    
-    if not ui.get(menu_setup.ui.misc_buybot) then
-        if DEBUG_BUYBOT then 
-        return false
-    end
-
-    local lp = entity.get_local_player()
-    if DEBUG_BUYBOT then 
-    if not lp then return false end
-    if not entity.is_alive(lp) then return false end
-
-    
-    
-    local function build_buy_lists()
-        local primary_sel = ui.get(menu_setup.ui.misc_buybot_primary) or {}
-        local secondary = ui.get(menu_setup.ui.misc_buybot_secondary) or {}
-        local misc = ui.get(menu_setup.ui.misc_buybot_misc) or {}
-        local gren = ui.get(menu_setup.ui.misc_buybot_grenades) or {}
-
-        local team_side = get_team_side()
-        local map = {
-            
-            ['awp'] = 'buy awp',
-            ['auto'] = { ct = 'buy scar20', t = 'buy g3sg1' },
-            ['ssg'] = 'buy ssg08',
-            
-            ['heavy'] = 'buy deagle',
-            ['dualies'] = 'buy elite',
-            ['five-seven / tec-9'] = { ct = 'buy fn57', t = 'buy tec9' },
-            ['p250'] = 'buy p250',
-            
-            ['taser'] = 'buy taser',
-            ['kevlar'] = 'buy vest',
-            ['helmet'] = 'buy vesthelm',
-            ['defuse kit'] = 'buy defuser',
-            
-            ['molotov'] = { ct = 'buy incgrenade', t = 'buy molotov' },
-            ['smoke'] = 'buy smokegrenade',
-            ['high explosive'] = 'buy hegrenade'
-        }
-
-        local function resolve(key)
-            local m = map[key]
-            if not m then return nil end
-            if type(m) == 'table' then
-                return team_side and m[team_side] or nil
-            end
-            return m
-        end
-
-        local function contains(list, key)
-            for _, v in ipairs(list) do if v == key then return true end end
-            return false
-        end
-
-        local primary_cmds = {}
-        
-        if contains(primary_sel, 'awp') then local r = resolve('awp') if r then table.insert(primary_cmds, r) end end
-        if contains(primary_sel, 'ssg') then local r = resolve('ssg') if r then table.insert(primary_cmds, r) end end
-        if contains(primary_sel, 'auto') then local r = resolve('auto') if r then table.insert(primary_cmds, r) end end
-
-        local other_cmds = {}
-        
-        for _, k in ipairs(primary_sel) do
-            if k ~= 'awp' and k ~= 'ssg' and k ~= 'auto' then
-                local r = resolve(k)
-                if r then table.insert(other_cmds, r) end
-            end
-        end
-
-        for _, k in ipairs(secondary) do local r = resolve(k) if r then table.insert(other_cmds, r) end end
-        for _, k in ipairs(misc) do local r = resolve(k) if r then table.insert(other_cmds, r) end end
-        for _, k in ipairs(gren) do local r = resolve(k) if r then table.insert(other_cmds, r) end end
-
-        return primary_cmds, other_cmds
-    end
-
-    local primary_cmds, other_cmds = build_buy_lists()
-    local has_any = (primary_cmds and #primary_cmds > 0) or (other_cmds and #other_cmds > 0)
-    if not has_any then
-        if DEBUG_BUYBOT then 
-        return false
-    end
-
-    
-    do
-        local acct = entity.get_prop(lp, 'm_iAccount') or 0
-        if acct <= MIN_BALANCE then
-            if DEBUG_BUYBOT then 
-            
-            local ok2, menu_setup2 = pcall(require, "require/abc/menu_setup")
-            if ok2 and menu_setup2 and menu_setup2.ui and menu_setup2.ui.paint_logger then
-                local logger_sel = ui.get(menu_setup2.ui.paint_logger) or {}
-                for _, v in ipairs(logger_sel) do
-                    if type(v) == 'string' and v:lower() == 'buybot' then
-                        local okm, modules = pcall(require, 'modules')
-                        if okm and modules and modules.pushlog then
-                            pcall(modules.pushlog, ('[Buybot] Skipped buys — account=%d'):format(acct), 4, 255, 200, 0, 255)
-                        end
-                        break
-                    end
-                end
-            end
-            return false
-        end
-    end
-
-    
-    local price_map = {
-        awp = 4750,
-        ssg08 = 1700,
-        scar20 = 5000,
-        g3sg1 = 5000,
-        deagle = 700,
-        elite = 800,
-        fiveseven = 500,
-        tec9 = 500,
-        p250 = 300,
-        taser = 200,
-        vest = 650,
-        vesthelm = 1000,
-        defuser = 400,
-        molotov = 400,
-        incgrenade = 400,
-        smokegrenade = 300,
-        hegrenade = 300
-    }
-
-    local function cost_of_cmd(cmd)
-        if not cmd then return 0 end
-        local token = cmd:match('buy%s+(%S+)')
-        if not token then return 0 end
-        token = token:lower()
-        return price_map[token] or 0
-    end
-
-    local total_cost = 0
-    for _, c in ipairs(primary_cmds or {}) do total_cost = total_cost + cost_of_cmd(c) end
-    for _, c in ipairs(other_cmds or {}) do total_cost = total_cost + cost_of_cmd(c) end
-    local acct_now = entity.get_prop(lp, 'm_iAccount') or 0
-    if acct_now < total_cost then
-        if DEBUG_BUYBOT then 
-        
-        local ok2, menu_setup2 = pcall(require, "require/abc/menu_setup")
-        if ok2 and menu_setup2 and menu_setup2.ui and menu_setup2.ui.paint_logger then
-            local logger_sel = ui.get(menu_setup2.ui.paint_logger) or {}
-            for _, v in ipairs(logger_sel) do
-                if type(v) == 'string' and v:lower() == 'buybot' then
-                    local okm, modules = pcall(require, 'modules')
-                    if okm and modules and modules.pushlog then
-                        pcall(modules.pushlog, ('[Buybot] Skipping buys — funds %d < required %d'):format(acct_now, total_cost), 4, 255, 200, 0, 255)
-                    end
-                    break
-                end
-            end
-        end
-        return false
-    end
-
-    
-    
-    
-    local skip_primary_chain_due_to_existing = false
-    if primary_cmds and #primary_cmds > 0 and player_has_awp() then
-        skip_primary_chain_due_to_existing = true
-    end
-
-    
-    local function player_has_item_token(item_token)
-        if not item_token then return false end
-        local lp = entity.get_local_player()
-        if not lp then return false end
-        item_token = tostring(item_token):lower()
-        for i = 0, 64 do
-            local wep = entity.get_prop(lp, 'm_hMyWeapons', i)
-            if wep then
-                local classname = (entity.get_classname(wep) or ''):lower()
-                if classname:find(item_token, 1, true) or classname:find(item_token) then
-                    return true
-                end
-            end
-        end
-        return false
-    end
-
-    
-    local function exec_other_cmds()
-        if not other_cmds or #other_cmds == 0 then return end
-        
-        local batch = table.concat(other_cmds, ';') .. ';'
-        client.exec(batch)
-        
-        
-        local ok2, menu_setup2 = pcall(require, "require/abc/menu_setup")
-        if ok2 and menu_setup2 and menu_setup2.ui and menu_setup2.ui.paint_logger then
-            local logger_sel = ui.get(menu_setup2.ui.paint_logger) or {}
-            for _, v in ipairs(logger_sel) do
-                if type(v) == 'string' and v:lower() == 'buybot' then
-                    local okm, modules = pcall(require, 'modules')
-                    if okm and modules and modules.pushlog then
-                        pcall(modules.pushlog, ('[Buybot] Bought (others): %s'):format(batch), 4, 255, 255, 0, 255)
-                    else
-                        
-                    end
-                    break
-                end
-            end
-        end
-    end
-
-    
-    local function exec_primary(idx)
-        idx = idx or 1
-        if idx > #primary_cmds then
-            
-            exec_other_cmds()
-            return true
-        end
-
-        local cmd = primary_cmds[idx]
-        if not cmd then return exec_primary(idx + 1) end
-        local item = cmd:match('buy%s+(%S+)')
-        if item and player_has_item_token(item) then
-            if DEBUG_BUYBOT then 
-            return exec_primary(idx + 1)
-        end
-
-        
-        client.exec(cmd .. ';')
-        
-
-        
-        
-        client.delay_call(1.0, function()
-            if item and player_has_item_token(item) then
-                bought_flag = true
-                if DEBUG_BUYBOT then 
-                
-                local ok2, menu_setup2 = pcall(require, "require/abc/menu_setup")
-                if ok2 and menu_setup2 and menu_setup2.ui and menu_setup2.ui.paint_logger then
-                    local logger_sel = ui.get(menu_setup2.ui.paint_logger) or {}
-                    for _, v in ipairs(logger_sel) do
-                        if type(v) == 'string' and v:lower() == 'buybot' then
-                            local okm, modules = pcall(require, 'modules')
-                            if okm and modules and modules.pushlog then
-                                pcall(modules.pushlog, ('[Buybot] Bought primary: %s'):format(item), 4, 255, 255, 0, 255)
-                            end
-                            break
-                        end
-                    end
-                end
-                
-                exec_other_cmds()
-                return
-            end
-
-            
-            exec_primary(idx + 1)
-        end)
-
-        return true
-    end
-
-    
-    if skip_primary_chain_due_to_existing then
-        if DEBUG_BUYBOT then 
-        exec_other_cmds()
-        return true
-    end
-
-    exec_primary(1)
-    return true
-end
-
-local function purchase_loop(remaining)
-    if remaining <= 0 or bought_flag then
-        buying_in_progress = false
-        if DEBUG_BUYBOT and not bought_flag then 
-        return
-    end
-
-    if try_buy_awp_once() then
-        
-        return
-    end
-
-    
-    if DEBUG_BUYBOT then 
-    client.delay_call(RETRY_DELAY, function() purchase_loop(remaining - 1) end)
-end
-
-
-local function start_buy_attempts()
-    if buying_in_progress or bought_flag then return end
-    if DEBUG_BUYBOT then 
-    buying_in_progress = true
-    purchase_loop(MAX_RETRIES)
-end
-
-
-
-
-client.set_event_callback('cs_pre_restart', function()
-    local delay = 0.3 - (client.latency() or 0)
-    if delay < 0.05 then delay = 0.05 end
-    client.delay_call(delay, start_buy_attempts)
-end)
-
-client.set_event_callback('round_prestart', function()
-    
-    client.delay_call(0.12, start_buy_attempts)
-end)
-
-
-
-
-client.set_event_callback('item_purchase', function(e)
-    if not e or not e.userid then return end
-    local ent = client.userid_to_entindex(e.userid)
-    if ent ~= entity.get_local_player() then return end
-    if not e.weapon then return end
-    if type(e.weapon) == 'string' and e.weapon:lower():find('awp') then
-        bought_flag = true
-        buying_in_progress = false
-        
-    end
-end)
-
-
-client.set_event_callback('round_end', function() bought_flag = false buying_in_progress = false end)
-client.set_event_callback('player_spawn', function(e)
-    if e and client.userid_to_entindex(e.userid) == entity.get_local_player() then
-        bought_flag = false
-        buying_in_progress = false
-        
-        client.delay_call(0.04, start_buy_attempts)
-    end
-end)
-
-
-
-
-client.set_event_callback('player_spawned', function(e)
-    if e and client.userid_to_entindex(e.userid) == entity.get_local_player() then
-        bought_flag = false
-        buying_in_progress = false
-        client.delay_call(0.04, start_buy_attempts)
-    end
-end)
-
-client.set_event_callback('switch_team', function()
-    
-    client.delay_call(0.06, start_buy_attempts)
-end)
-
-
-client.set_event_callback('buytime_ended', function()
-    buying_in_progress = false
-    if DEBUG_BUYBOT then 
-end)
-
-
-
-
-client.set_event_callback('paint', function()
-    local lp = entity.get_local_player()
-    if not prev_local_player and lp then
-        
-        bought_flag = false
-        buying_in_progress = false
-        start_buy_attempts()
-    end
-    prev_local_player = lp
-end)
-
-return {}
-]]
 __bundle["require/features/misc/collect"] = [[
 local M = {}
 
@@ -4858,7 +4388,7 @@ local ui_get, ui_new_checkbox, ui_new_color_picker, ui_new_hotkey, ui_new_multis
 local plist_get, entity_hitbox_position = plist.get, entity.hitbox_position
 local ffi = require("ffi")
 local vector = require("vector")
-
+local weapons_data = require("gamesense/csgo_weapons")
 local get_client_entity = vtable_bind("client_panorama.dll", "VClientEntityList003", 3, "void*(__thiscall*)(void*, int)")
 local weapon_is_ready = vtable_thunk(166, "bool(__thiscall*)(void*)")
 local get_weapon_inaccuracy = vtable_thunk(483, "float(__thiscall*)(void*)")
@@ -5479,7 +5009,6 @@ client.set_event_callback("setup_command", function()
     local ok_type, typ = pcall(ui.get, _ms.ui.fakelag_fakelag_type)
     if not ok_type then return end
 
-    
     if tostring(typ) == "gamesense" then
         ui.set(gs_item_refs[1][1], true)
         local ok_amt, amt = pcall(ui.get, _ms.ui.fakelag_fakelag_amount)
@@ -5704,7 +5233,6 @@ client.set_event_callback('setup_command', function()
     activate_hotkeys()
 
 end)]]
-__bundle["require/features/misc/ragebot"] = [[]]
 __bundle["require/features/misc/resolver"] = [[
 
 
@@ -7392,7 +6920,7 @@ pcall(function() menu_setup = require('require/abc/menu_setup') end)
 local cb = nil
 pcall(function() cb = require('require/abc/callbacks') end)
 if not cb then error("callbacks manager required: require/abc/callbacks") end
-
+local c_entity = require("gamesense/entity") or error("You're missing a required module: gamesense/entity")
 
 
 local function get_lp_entity()
@@ -12223,7 +11751,6 @@ safe_require("require/features/aa/antiaim")
 safe_require("require/features/misc/resolver")
 safe_require("require/features/misc/analyze")
 safe_require("require/features/misc/dormant_aimbot")
-safe_require("require/features/misc/buybot")
 safe_require("require/features/misc/fakelag")
 safe_require("require/features/misc/hotkeys")
 safe_require("require/features/misc/freestand_helper")
@@ -12259,7 +11786,7 @@ safe_require("require/features/paint/filter_console")
 safe_require("require/features/paint/warnings")
 safe_require("require/features/paint/text_watermark")
 safe_require("require/features/paint/bullet_tracer")
-
+safe_require("require/features/paint/animations")
 safe_require("require/features/paint/lagcomp_box")
 safe_require("require/features/paint/insults")
 
