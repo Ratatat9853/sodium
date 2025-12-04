@@ -375,6 +375,14 @@ local function build_menu(modules)
         ui.new_checkbox('AA', 'Anti-aimbot angles', 'walkbot'),
         { requires_login = true, key = 'misc_walkbot', tab = 'MISC', visible = true, config_type = 'checkbox' }
     )
+    menu_setup.ui.misc_backstab = menu_setup.register_ui(
+        ui.new_checkbox('AA', 'Anti-aimbot angles', 'backstab assist'),
+        { requires_login = true, key = 'misc_backstab', tab = 'MISC', visible = true, config_type = 'checkbox' }
+    )
+    menu_setup.ui.misc_spindead = menu_setup.register_ui(
+        ui.new_checkbox('AA', 'Anti-aimbot angles', 'spin on dead enemies'),
+        { requires_login = true, key = 'misc_spindead', tab = 'MISC', visible = true, config_type = 'checkbox' }
+    )
     menu_setup.ui.aa_gskey_freestandh = menu_setup.register_ui(
         ui.new_label('AA', 'Other', 'hotkey -> freestand'),
         { requires_login = false, key = 'aa_gskey_freestandh', tab = 'AA', visible = true, config_type = 'label' }
@@ -1729,8 +1737,7 @@ function sodium.toggle_rage_menu(show)
 end
 
 return sodium]]
-__bundle["require/abc/menu_visibility"] = [[
-local conditions = {
+__bundle["require/abc/menu_visibility"] = [[local conditions = {
 	"global",
 	"stand",
 	"move",
@@ -1743,18 +1750,13 @@ local conditions = {
 	"legit",
 }
 
-
 local login_system = require("require/abc/login_system")
 
-
-
 local function update_visibility(modules)
-	
 	if modules.menu_setup and modules.menu_setup.refresh_cfg_listbox then
 		modules.menu_setup.refresh_cfg_listbox()
 	end
 
-	
 	if modules and not modules.login then
 		modules.login = login_system
 	end
@@ -1845,12 +1847,13 @@ local function update_visibility(modules)
 
 			local show_fakelag = show_fakelag_tab and mode == "fakelag"
 			local fakelag_enabled = modules.safe.safe_get(modules.menu_setup.ui.fakelag_fakelag) == true
+			local fakelagtype = modules.safe.safe_get(modules.menu_setup.ui.fakelag_fakelag_type) == "sodium"
 			ui.set_visible(modules.menu_setup.ui.fakelag_fakelag, show_fakelag)
 			ui.set_visible(modules.menu_setup.ui.fakelag_fakelag_type, show_fakelag and fakelag_enabled)
-			ui.set_visible(modules.menu_setup.ui.fakelag_fakelag_amount, show_fakelag and fakelag_enabled)
-			ui.set_visible(modules.menu_setup.ui.fakelag_fakelag_variance, show_fakelag and fakelag_enabled)
-			ui.set_visible(modules.menu_setup.ui.fakelag_fakelag_limit, show_fakelag and fakelag_enabled)
-			ui.set_visible(modules.menu_setup.ui.fakelag_fakelag_type2, show_fakelag and fakelag_enabled)
+			ui.set_visible(modules.menu_setup.ui.fakelag_fakelag_amount, show_fakelag and fakelag_enabled and not fakelagtype)
+			ui.set_visible(modules.menu_setup.ui.fakelag_fakelag_variance, show_fakelag and fakelag_enabled and not fakelagtype)
+			ui.set_visible(modules.menu_setup.ui.fakelag_fakelag_limit, show_fakelag and fakelag_enabled and not fakelagtype)
+			ui.set_visible(modules.menu_setup.ui.fakelag_fakelag_type2, show_fakelag and fakelag_enabled and fakelagtype)
 
 			local show_settings = show_fakelag_tab and mode == "settings"
 			ui.set_visible(modules.menu_setup.ui.fakelag_settings_freestanding, show_settings)
@@ -1858,11 +1861,7 @@ local function update_visibility(modules)
 			ui.set_visible(modules.menu_setup.ui.fakelag_settings_antibrute, show_settings)
 			ui.set_visible(modules.menu_setup.ui.fakelag_settings_roll, show_settings)
 			ui.set_visible(modules.menu_setup.ui.fakelag_settings_side, show_settings)
-
-
-
 		end
-
 	end
 
 	local aa_items = {
@@ -1887,14 +1886,14 @@ local function update_visibility(modules)
 		'misc_dormantaimbot',
 		'misc_exploit_fakelag',
 		'misc_walkbot',
+		'misc_backstab',
+		'misc_spindead',
 	}
 	for _, key in ipairs(misc_items) do
 		if modules.menu_setup.ui[key] then
 			ui.set_visible(modules.menu_setup.ui[key], tab_name == "MISC")
 		end
 	end
-
-
 
 	local paint_items = {
 		'paint_target_info',
@@ -1997,9 +1996,14 @@ local function setup_callbacks(modules)
 
 	
 	local fl_keys = {
-		'fakelag_defensive', 'fakelag_stealer', 'fakelag_fakelag',
-		'fakelag_settings_freestanding', 'fakelag_settings_enhance_onshot',
-		'fakelag_settings_antibrute', 'fakelag_settings_roll',
+		'fakelag_defensive',
+		'fakelag_stealer',
+		'fakelag_fakelag',
+		'fakelag_fakelag_type',
+		'fakelag_settings_freestanding',
+		'fakelag_settings_enhance_onshot',
+		'fakelag_settings_antibrute',
+		'fakelag_settings_roll',
 		'fakelag_settings_side',
 	}
 	for _, key in ipairs(fl_keys) do
@@ -2347,19 +2351,30 @@ return AA_COLLECT]]
 __bundle["require/features/aa/antiaim"] = [[local builder = require('require/features/aa/builder')
 local defensive = require('require/features/aa/defensive')
 
-client.set_event_callback('setup_command', function(cmd)
+local callbacks = require('require/abc/callbacks')
+
+local function alive_enemies()
+    local max = (globals.maxplayers and globals.maxplayers() or 64)
+    local get_class, is_enemy, is_alive = entity.get_classname, entity.is_enemy, entity.is_alive
+    if not (get_class and is_enemy and is_alive) then return 0 end
+    local alive = 0
+    for i=1,max do
+        if get_class(i) == 'CCSPlayer' and is_enemy(i) and is_alive(i) then alive = alive + 1 end
+    end
+    return alive
+end
+
+local aa_setup_cmd_cb_id = callbacks.register('setup_command', function(cmd)
 
 
-	if builder and builder.activate then
+	if builder and builder.activate and tonumber(alive_enemies()) > 0 then
 		builder.activate(cmd)
 	end
 
-
-    if defensive and defensive.activate then
-        defensive.activate(cmd)
-    end
-
-end)]]
+	if defensive and defensive.activate and tonumber(alive_enemies()) > 0 then
+		defensive.activate(cmd)
+	end
+end, { alive_only = true, require_login = true })]]
 __bundle["require/features/aa/builder"] = [[local menu_setup = require('require/abc/menu_setup')
 local player_condition = require('require/aa/player_condition')
 local aa_collect = require('require/features/aa/aa_collect')
@@ -3371,6 +3386,7 @@ local get_history = function(ent)
 end
 
 local ok_dispatch, resolver_dispatcher = pcall(require, "require/features/misc/resolver_dispatcher")
+local callbacks = require('require/abc/callbacks')
 
 local function analyze_ent(ent)
 	
@@ -3821,7 +3837,7 @@ end
 
 client.register_esp_flag("Resolver", 255, 255, 255, resolver_yaw_esp_flag)
 
-client.set_event_callback('net_update_end', function()
+callbacks.register('net_update_end', function()
 	local ok_ms, menu_setup = pcall(require, "require/abc/menu_setup")
 	if ok_ms and menu_setup and menu_setup.ui and menu_setup.ui.misc_resolver then
 		local ok_get, enabled = pcall(ui.get, menu_setup.ui.misc_resolver)
@@ -3829,8 +3845,80 @@ client.set_event_callback('net_update_end', function()
 			pcall(analyzing_antiaim)
 		end
 	end
-end)
+end, { alive_only = true, require_login = true })
 ]]
+__bundle["require/features/misc/backstab_assist"] = [[local menu_setup = require("require/abc/menu_setup")
+local callbacks = require('require/abc/callbacks')
+
+local aa_yaw, aa_yaw_slider = ui.reference("AA", "Anti-aimbot angles", "Yaw")
+local cached = nil
+
+local function cache()
+	if cached then return end
+	cached = {}
+	if aa_yaw then cached.yaw = ui.get(aa_yaw) end
+	if aa_yaw_slider then cached.yaw_slider = ui.get(aa_yaw_slider) end
+end
+
+local function restore()
+	if not cached then return end
+	if aa_yaw and cached.yaw ~= nil then pcall(ui.set, aa_yaw, cached.yaw) end
+	if aa_yaw_slider and cached.yaw_slider ~= nil then pcall(ui.set, aa_yaw_slider, cached.yaw_slider) end
+	cached = nil
+end
+
+local function apply()
+	cache()
+	if aa_yaw then pcall(ui.set, aa_yaw, "180") end
+	if aa_yaw_slider then pcall(ui.set, aa_yaw_slider, 180) end
+end
+
+local function enemy_within_range(range)
+	local lp = entity.get_local_player()
+	if not lp or not entity.is_alive(lp) then return false end
+	local lx, ly, lz = entity.get_origin(lp)
+	if not lx then return false end
+	local enemies = entity.get_players(true) or {}
+	for _, enemy in ipairs(enemies) do
+		if entity.is_alive(enemy) and not entity.is_dormant(enemy) then
+			local weapon = entity.get_player_weapon(enemy)
+			if weapon then
+				local name = entity.get_classname(weapon)
+				if name and string.find(string.lower(name), "knife", 1, true) then
+					local ex, ey, ez = entity.get_origin(enemy)
+					if ex then
+						local dx, dy, dz = lx - ex, ly - ey, (lz or 0) - (ez or 0)
+						local dist = math.sqrt(dx * dx + dy * dy + dz * dz)
+						if dist <= range then return true end
+					end
+				end
+			end
+		end
+	end
+	return false
+end
+
+local function handle(cmd)
+	if not (menu_setup and menu_setup.ui and menu_setup.ui.misc_backstab) then restore() return end
+	local ok, enabled = pcall(ui.get, menu_setup.ui.misc_backstab)
+	if not ok or not enabled then restore() return end
+	local range = 140
+	if enemy_within_range(range) then
+		apply()
+	else
+		restore()
+	end
+end
+
+if menu_setup and menu_setup.ui and menu_setup.ui.misc_backstab then
+	ui.set_callback(menu_setup.ui.misc_backstab, function()
+		local ok, val = pcall(ui.get, menu_setup.ui.misc_backstab)
+		if not ok or not val then restore() end
+	end)
+end
+
+callbacks.register("setup_command", handle, { alive_only = true, require_login = true })
+callbacks.register("shutdown", restore, { alive_only = true, require_login = true })]]
 __bundle["require/features/misc/collect"] = [[
 local M = {}
 
@@ -4402,6 +4490,8 @@ local rage_refs = {
 
 local menu_setup = require("require/abc/menu_setup")
 
+local callbacks = require('require/abc/callbacks')
+
 
 local menu_cache = {}
 local function menu_enabled(name)
@@ -4581,7 +4671,7 @@ end
 local function on_setup_command(cmd)
 	update_dormant_memory()
 
-	if not menu_enabled('misc_dormantaimbot') or not menu_enabled('misc_dormantaimbot_key') then
+	if not menu_enabled('misc_dormantaimbot') then
 		return
 	end
 
@@ -4711,7 +4801,6 @@ local function on_setup_command(cmd)
 		stored_hitbox = chosen_hitbox
 		stored_point_label = chosen_label
 		stored_target = target
-		
 		stored_accuracy = dormant_accuracy
 	end
 end
@@ -4768,14 +4857,10 @@ local function on_round_prestart()
 	freeze_end_tick = globals_tickcount() + freeze_time
 end
 
-
-
-
-
-client.set_event_callback("setup_command", on_setup_command)
-client.set_event_callback("round_prestart", on_round_prestart)
-client.set_event_callback("player_hurt", on_player_hurt)
-client.set_event_callback("weapon_fire", on_weapon_fire)
+callbacks.register("setup_command", on_setup_command, { alive_only = true, require_login = true })
+callbacks.register("round_prestart", on_round_prestart, { alive_only = true, require_login = true })
+callbacks.register("player_hurt", on_player_hurt, { alive_only = true, require_login = true })
+callbacks.register("weapon_fire", on_weapon_fire, { alive_only = true, require_login = true })
 
 client.register_esp_flag("DA", 255, 255, 255, function(player)
 	if menu_enabled('misc_dormantaimbot') and entity_is_alive(entity_get_local_player()) then
@@ -4784,7 +4869,7 @@ client.register_esp_flag("DA", 255, 255, 255, function(player)
 end)
 
 
-client.set_event_callback("paint", function()
+callbacks.register("paint", function()
 	if not entity_is_alive(entity_get_local_player()) then return end
 	if menu_enabled('misc_dormantaimbot') then
 		local ic = {255,255,255,200}
@@ -4792,8 +4877,10 @@ client.set_event_callback("paint", function()
 		if #get_dormant_enemies()==0 then ic={255,0,50,255} end
 		renderer_indicator(ic[1],ic[2],ic[3],ic[4],"DA")
 	end
-end)]]
+end, { alive_only = true, require_login = true })]]
 __bundle["require/features/misc/enhance_osaa"] = [[local ok_menu, menu_setup = pcall(require, "require/abc/menu_setup")
+
+local callbacks = require('require/abc/callbacks')
 
 local gs_item_refs = {}
 local gs_ref_visible = {}
@@ -4813,19 +4900,19 @@ end
 local shot_ticks = {}
 local damage_ticks = {}
 
-client.set_event_callback("weapon_fire", function(e)
+callbacks.register("weapon_fire", function(e)
     local local_player = entity.get_local_player()
     if local_player and client.userid_to_entindex(e.userid) == local_player then
         shot_ticks[globals.tickcount()] = true
     end
-end)
+end, { alive_only = true, require_login = true })
 
-client.set_event_callback("player_hurt", function(e)
+callbacks.register("player_hurt", function(e)
     local local_player = entity.get_local_player()
     if local_player and client.userid_to_entindex(e.userid) == local_player then
         damage_ticks[globals.tickcount()] = true
     end
-end)
+end, { alive_only = true, require_login = true })
 
 local function has_fired()
     local now = globals.tickcount()
@@ -4876,29 +4963,21 @@ local function enhance_osaa(cmd)
     end
 end
 
-client.set_event_callback('setup_command', function(cmd)
+callbacks.register('setup_command', function(cmd)
 
     enhance_osaa(cmd)
 
-end)]]
-__bundle["require/features/misc/events"] = [[
-
-
-
-
-local events = {}
+end, { alive_only = true, require_login = true })]]
+__bundle["require/features/misc/events"] = [[local events = {}
 local globals = globals
-
 
 events.last_hit = {}
 events.last_miss = {}
-
 
 events.shots_queue = {}
 events.shots_by_id = {}
 
 function events.record_weapon_fire(ctx)
-  
   if not ctx or not ctx.t then return end
   events.shots_queue[#events.shots_queue+1] = ctx
 end
@@ -4926,7 +5005,6 @@ function events.record_player_hurt(id, victim, rec)
   if id then events.shots_by_id[id] = nil end
 end
 
-
 function events.link_recent_shot_to_victim(victim, max_age)
   max_age = max_age or 0.35
   local now = globals.curtime()
@@ -4943,6 +5021,8 @@ end
 return events
 ]]
 __bundle["require/features/misc/exploit_fakelag"] = [[local ok_menu, menu_setup = pcall(require, "require/abc/menu_setup")
+
+local callbacks = require('require/abc/callbacks')
 
 local gs_item_refs = {}
 local gs_ref_visible = {}
@@ -4978,11 +5058,11 @@ local function exploit_fakelag(cmd)
 
 end
 
-client.set_event_callback('setup_command', function(cmd)
+callbacks.register('setup_command', function(cmd)
 
     exploit_fakelag(cmd)
 
-end)]]
+end, { alive_only = true, require_login = true })]]
 __bundle["require/features/misc/fakelag"] = [[local gs_item_refs = {}
 local gs_ref_visible = {}
 for i, item in ipairs({
@@ -5000,7 +5080,9 @@ end
 
 local _ms_ok, _ms = pcall(require, "require/abc/menu_setup")
 
-client.set_event_callback("setup_command", function()
+local callbacks = require('require/abc/callbacks')
+
+callbacks.register("setup_command", function()
     if not (_ms_ok and _ms and _ms.ui) then return end
 
     local ok_enabled, enabled = pcall(ui.get, _ms.ui.fakelag_fakelag)
@@ -5028,28 +5110,24 @@ client.set_event_callback("setup_command", function()
         return
     end
 
-    
-    if tostring(typ) == "celestial" then
+    if tostring(typ) == "sodium" then
         ui.set(gs_item_refs[1][1], true)
         local ok_t2, t2 = pcall(ui.get, _ms.ui.fakelag_fakelag_type2)
         if not ok_t2 then return end
 
-        
         if tostring(t2) == "jitter" then
             if gs_item_refs[2] and gs_item_refs[2][1] then
                 pcall(ui.set, gs_item_refs[2][1], "dynamic")
             end
-            
             local tick = globals.tickcount() or 0
-            local var_val = tick % 101 
-            local lim_val = 1 + (tick % 15) 
+            local var_val = tick % 101
+            local lim_val = math.random(3, 6) + (tick % 15)
             if gs_item_refs[3] and gs_item_refs[3][1] then pcall(ui.set, gs_item_refs[3][1], var_val) end
             if gs_item_refs[4] and gs_item_refs[4][1] then pcall(ui.set, gs_item_refs[4][1], lim_val) end
 
             return
         end
 
-        
         if tostring(t2) == "max" then
             if gs_item_refs[2] and gs_item_refs[2][1] then
                 pcall(ui.set, gs_item_refs[2][1], "dynamic")
@@ -5063,7 +5141,7 @@ client.set_event_callback("setup_command", function()
             return
         end
     end
-end)
+end, { alive_only = true, require_login = true })
 
 ]]
 __bundle["require/features/misc/freestand_helper"] = [[local gs_item_refs = {}
@@ -5085,6 +5163,8 @@ for i, item in ipairs({
 end
 
 local ok_menu, menu_setup = pcall(require, "require/abc/menu_setup")
+
+local callbacks = require('require/abc/callbacks')
 
 local function freestand_options(cmd)
     if not (menu_setup and menu_setup.ui and menu_setup.ui.aa_gskey_freestand) then return end
@@ -5137,11 +5217,9 @@ local function freestand_options(cmd)
 
 end
 
-client.set_event_callback('setup_command', function(cmd)
-
+callbacks.register('setup_command', function(cmd)
     freestand_options(cmd)
-
-end)]]
+end, { alive_only = true, require_login = true })]]
 __bundle["require/features/misc/history"] = [[
 local history = {}
 
@@ -5198,6 +5276,8 @@ end
 
 local ok_menu, menu_setup = pcall(require, "require/abc/menu_setup")
 
+local callbacks = require('require/abc/callbacks')
+
 local function activate_hotkeys()
 
     if ui.get(menu_setup.ui.aa_gskey_freestand) then
@@ -5228,11 +5308,11 @@ local function activate_hotkeys()
 
 end
 
-client.set_event_callback('setup_command', function()
+callbacks.register('setup_command', function()
 
     activate_hotkeys()
 
-end)]]
+end, { alive_only = true, require_login = true })]]
 __bundle["require/features/misc/resolver"] = [[
 
 
@@ -5254,14 +5334,7 @@ local ok_state, state = pcall(require, "require/features/misc/state")
 local ok_events, events = pcall(require, "require/features/misc/events")
 local ok_vector, vec = pcall(require, "require/help/vector")
 local vector = ok_vector and vec or nil
-
-
-
-
-
-
-
-
+local callbacks = require('require/abc/callbacks')
 
 
 
@@ -5439,12 +5512,9 @@ client.set_event_callback('net_update_end', function()
         
 
     end)
-end)
+end, { alive_only = true, require_login = true })
 
-
-
-
-client.set_event_callback('weapon_fire', function(e)
+callbacks.register('weapon_fire', function(e)
     pcall(function()
 
 
@@ -5458,12 +5528,9 @@ client.set_event_callback('weapon_fire', function(e)
         
     end)
     if EVENTS and EVENTS.record_weapon_fire then pcall(EVENTS.record_weapon_fire, e) end
-end)
+end, { alive_only = true, require_login = true })
 
-
-
-
-client.set_event_callback('aim_fire', function(e)
+callbacks.register('aim_fire', function(e)
     pcall(function()
 
 
@@ -5478,12 +5545,9 @@ client.set_event_callback('aim_fire', function(e)
         
     end)
     if EVENTS and EVENTS.record_aim_fire then pcall(EVENTS.record_aim_fire, e) end
-end)
+end, { alive_only = true, require_login = true })
 
-
-
-
-client.set_event_callback('aim_hit', function(e)
+callbacks.register('aim_hit', function(e)
     pcall(function()
 
 
@@ -5499,12 +5563,9 @@ client.set_event_callback('aim_hit', function(e)
         
     end)
     if EVENTS and EVENTS.record_aim_hit then pcall(EVENTS.record_aim_hit, e) end
-end)
+end, { alive_only = true, require_login = true })
 
-
-
-
-client.set_event_callback('aim_miss', function(e)
+callbacks.register('aim_miss', function(e)
     pcall(function()
 
 
@@ -5517,12 +5578,9 @@ client.set_event_callback('aim_miss', function(e)
         
     end)
     if EVENTS and EVENTS.record_aim_miss then pcall(EVENTS.record_aim_miss, e) end
-end)
+end, { alive_only = true, require_login = true })
 
-
-
-
-client.set_event_callback('player_hurt', function(e)
+callbacks.register('player_hurt', function(e)
     pcall(function()
 
 
@@ -5536,12 +5594,9 @@ client.set_event_callback('player_hurt', function(e)
         
     end)
     if EVENTS and EVENTS.record_player_hurt then pcall(EVENTS.record_player_hurt, e) end
-end)
+end, { alive_only = true, require_login = true })
 
-
-
-
-client.set_event_callback('bullet_impact', function(e)
+callbacks.register('bullet_impact', function(e)
     pcall(function()
 
 
@@ -5553,42 +5608,33 @@ client.set_event_callback('bullet_impact', function(e)
     end)
     if EVENTS and EVENTS.on_bullet_impact then pcall(EVENTS.on_bullet_impact, e) end
     if EVENTS and EVENTS.record_bullet_impact then pcall(EVENTS.record_bullet_impact, e) end
-end)
+end, { alive_only = true, require_login = true })
 
-
-
-
-client.set_event_callback('paint', function()
+callbacks.register('paint', function()
     pcall(function()
 
         
 
     end)
     if EVENTS and EVENTS.on_paint then pcall(EVENTS.on_paint) end
-end)
+end, { alive_only = true, require_login = true })
 
-
-
-
-client.set_event_callback("round_start", function(e)
+callbacks.register("round_start", function(e)
     pcall(function() print("[resolver] round_start") end)
 
 
 
     M.players = {}
     if EVENTS and EVENTS.on_round_start then pcall(EVENTS.on_round_start, e) end
-end)
+end, { alive_only = true, require_login = true })
 
-
-
-
-client.set_event_callback("shutdown", function()
+callbacks.register("shutdown", function()
     if client and client.unset_event_callback then
 
 
 
     end
-end)
+end, { alive_only = true, require_login = true })
 ]]
 __bundle["require/features/misc/resolver_dispatcher"] = [[local M = {}
 
@@ -6024,6 +6070,75 @@ client.set_event_callback('setup_command', function(cmd)
     rolling(cmd)
 
 end)]]
+__bundle["require/features/misc/spin_on_dead_enemies"] = [[local gs_item_refs = {}
+for i, item in ipairs({
+    { 'AA', 'Anti-aimbot angles', 'Enabled' },
+    { 'AA', 'Anti-aimbot angles', 'Pitch' },
+    { 'AA', 'Anti-aimbot angles', 'Yaw base' },
+    { 'AA', 'Anti-aimbot angles', 'Yaw' },
+    { 'AA', 'Anti-aimbot angles', 'Yaw jitter' },
+    { 'AA', 'Anti-aimbot angles', 'Body yaw' },
+    { 'AA', 'Anti-aimbot angles', 'Freestanding body yaw' },
+    { 'AA', 'Anti-aimbot angles', 'Edge yaw' },
+    { 'AA', 'Anti-aimbot angles', 'Freestanding' },
+    { 'AA', 'Anti-aimbot angles', 'Roll' },
+    { 'AA', 'Fake lag', 'Enabled' },
+    { 'AA', 'Fake lag', 'Amount' },
+    { 'AA', 'Fake lag', 'Variance' },
+    { 'AA', 'Fake lag', 'Limit' },
+    { 'AA', 'Other', 'Slow motion' },
+    { 'AA', 'Other', 'Leg movement' },
+    { 'AA', 'Other', 'On shot anti-aim' },
+    { 'AA', 'Other', 'Fake peek' },
+}) do
+    local refs = {ui.reference(item[1], item[2], item[3])}
+    gs_item_refs[i] = refs
+end
+
+local e, g, u, c = entity, globals, ui, client
+local menu_setup = require("require/abc/menu_setup")
+
+local function apply()
+    local map = {
+        {2, 'Off'}, {3, 'Local view'}, {4, {'Spin', 45}}, {5, {'Off', 0}}, {6, {'Off', 0}},
+    }
+    for _, v in ipairs(map) do
+        local idx, val = v[1], v[2]
+        local refs = gs_item_refs[idx]
+        if not refs then goto continue end
+        if type(val) ~= 'table' then
+            pcall(u.set, refs[1], val)
+        else
+            if refs[1] then pcall(u.set, refs[1], val[1]) end
+            if refs[2] then pcall(u.set, refs[2], val[2]) end
+        end
+        ::continue::
+    end
+end
+
+local function alive_enemies()
+    local max = (g.maxplayers and g.maxplayers() or 64)
+    local get_class, is_enemy, is_alive = e.get_classname, e.is_enemy, e.is_alive
+    if not (get_class and is_enemy and is_alive) then return 0 end
+    local alive = 0
+    for i=1,max do
+        if get_class(i) == 'CCSPlayer' and is_enemy(i) and is_alive(i) then alive = alive + 1 end
+    end
+    return alive
+end
+
+local function tick()
+    if not u.get(menu_setup.ui.misc_spindead) then return end
+    if alive_enemies() == 0 then apply() end
+end
+
+local cb_ok, callbacks = pcall(require, "require/abc/callbacks")
+if cb_ok and callbacks then
+    callbacks.callback('run_command', tick, { alive_only = true, require_login = true })
+else
+    c.set_event_callback('run_command', tick)
+end
+]]
 __bundle["require/features/misc/state"] = [[
 local collect = require("require.features.misc.collect")
 local history = require("require.features.misc.history")
@@ -7749,7 +7864,8 @@ local function is_damage_enabled()
 	return false
 end
 
-client.set_event_callback('aim_hit', function(ev)
+local cb_ok, callbacks = pcall(require, "require/abc/callbacks")
+local function aim_hit_handler(ev)
 	if not is_damage_enabled() then damage_list = {} return end
 	if not is_damage_enabled() then return end
 	local me = entity.get_local_player()
@@ -7757,7 +7873,7 @@ client.set_event_callback('aim_hit', function(ev)
 	local target = ev.target or ev.target_index
 	if type(target) ~= 'number' or target == 0 or not entity.is_enemy(target) then return end
 	local dmg = ev.damage or 0
-	local hs = ev.hitgroup == 1 
+	local hs = ev.hitgroup == 1
 	local killed = ev.health == 0
 	local x, y, z = entity.hitbox_position(target, ev.hitgroup or 'head')
 	if not x then x, y, z = entity.get_origin(target) end
@@ -7767,13 +7883,13 @@ client.set_event_callback('aim_hit', function(ev)
 	if killed then color = {217, 100, 100} elseif hs then color = {165, 202, 42} end
 	damage_list[#damage_list + 1] = {dmg = dmg, x = x, y = y, z = z, t = now, color = color, base_y = nil}
 	if #damage_list > 8 then table.remove(damage_list, 1) end
-end)
+end
 
-client.set_event_callback('paint', function()
+local function paint_handler(ev)
 	if is_damage_enabled() then
 		local now = globals.realtime()
-		local float_time = 1.4 
-		local max_float = 32 
+		local float_time = 1.4
+		local max_float = 32
 		local i = 1
 		while i <= #damage_list do
 			if now - (damage_list[i].t or 0) > float_time then
@@ -7789,9 +7905,8 @@ client.set_event_callback('paint', function()
 			local sx, sy = renderer.world_to_screen(it.x, it.y, it.z)
 			if sx and sy then
 				local age = now - (it.t or 0)
-				
 				local progress = math.min(1, age / float_time)
-				local float_y = max_float * (1 - math.exp(-3 * progress)) 
+				local float_y = max_float * (1 - math.exp(-3 * progress))
 				local alpha = math.floor(math.max(0, (1 - progress) * 255))
 				if alpha > 0 then
 					renderer.text(sx, sy - float_y, it.color[1], it.color[2], it.color[3], alpha, "crdb-", 0, tostring(it.dmg))
@@ -7801,7 +7916,15 @@ client.set_event_callback('paint', function()
 	else
 		damage_list = {}
 	end
-end)
+end
+
+if cb_ok and callbacks and callbacks.callback then
+	callbacks.callback('aim_hit', aim_hit_handler, { alive_only = true, require_login = true })
+	callbacks.callback('paint', paint_handler, { alive_only = true, require_login = true })
+else
+	client.set_event_callback('aim_hit', aim_hit_handler)
+	client.set_event_callback('paint', paint_handler)
+end
 
 ]]
 __bundle["require/features/paint/damage_penetration"] = [[
@@ -8006,9 +8129,7 @@ else
 
 	_G.sodium_B_MD_DP = on_paint
 	client_set_callback('paint', on_paint)
-end
-
-]]
+end]]
 __bundle["require/features/paint/entidx"] = [[local menu_setup = require("require/abc/menu_setup")
 local enemies = require("require/help/enemies")
 
@@ -8023,7 +8144,12 @@ local function on_paint_entidx()
 	end
 end
 
-client.set_event_callback("paint", on_paint_entidx)]]
+local cb_ok, callbacks = pcall(require, "require/abc/callbacks")
+if cb_ok and callbacks and callbacks.callback then
+	callbacks.callback("paint", on_paint_entidx, { alive_only = true, require_login = true })
+else
+	client.set_event_callback("paint", on_paint_entidx)
+end]]
 __bundle["require/features/paint/filter_console"] = [[
 
 
@@ -8269,8 +8395,8 @@ local function indicators_enabled()
   return true
 end
 
-client.set_event_callback("paint", function()
-  if not entity.is_alive(entity.get_local_player()) then return end
+local cb_ok, callbacks = pcall(require, "require/abc/callbacks")
+local function paint_handler(ev)
   if not indicators_enabled() then return end
 
   local sw, sh = client.screen_size()
@@ -8284,7 +8410,6 @@ client.set_event_callback("paint", function()
 
   local y = cy + 18
 
-  
   local local_player = entity.get_local_player()
   local is_scoped = false
   if local_player then
@@ -8362,7 +8487,11 @@ client.set_event_callback("paint", function()
   local base_x3 = cx - (w3 / 2)
   local draw_x3 = base_x3 + (indicator_offsets[3] or 0)
   renderer.text(draw_x3, y, text_r, text_g, text_b, 255, "b", 0, cond_text)
-end)]]
+end
+
+if cb_ok and callbacks and callbacks.callback then
+  callbacks.callback("paint", paint_handler, { alive_only = true, require_login = true })
+end]]
 __bundle["require/features/paint/indicators_small"] = [[local indicator_offsets = { 0, 0 }
 local indicator_targets = { 4, 2 }
 local indicator_speeds = { 5, 5 }
@@ -8373,6 +8502,7 @@ end
 
 local menu_ok, menu_setup = pcall(require, "require/abc/menu_setup")
 local string_ok, string_helper = pcall(require, "require/help/string")
+local callbacks = require('require/abc/callbacks')
 local function to_upper(s)
   if s == nil then return "" end
   if string_ok and string_helper and string_helper.upper then
@@ -8403,7 +8533,7 @@ local function indicators_enabled()
   return true
 end
 
-client.set_event_callback("paint", function()
+callbacks.register("paint", function()
   if not entity.is_alive(entity.get_local_player()) then return end
   if not indicators_enabled() then return end
 
@@ -8513,7 +8643,7 @@ client.set_event_callback("paint", function()
   renderer.text(draw_x2, y, dt_r, dt_g, dt_b, 255, "-", 0, dt_text_draw)
   y = y + (line_hs[2] or line_h)
 
-end)]]
+end, { alive_only = true, require_login = true })]]
 __bundle["require/features/paint/insults"] = [[
 
 
@@ -8895,7 +9025,10 @@ local function on_player_death(e)
 	end
 end
 
-client.set_event_callback('player_death', on_player_death)
+local cb_ok, callbacks = pcall(require, "require/abc/callbacks")
+if cb_ok and callbacks and callbacks.callback then
+    callbacks.callback('player_death', on_player_death, { alive_only = true, require_login = true })
+end
 
 ]]
 __bundle["require/features/paint/lagcomp_box"] = [[
@@ -8960,7 +9093,8 @@ local edges = {
 }
 
 
-client.set_event_callback('paint', function()
+local cb_ok, callbacks = pcall(require, "require/abc/callbacks")
+local function paint_handler(ev)
     local me = entity.get_local_player()
     if not me or not entity.is_alive(me) then return end
 
@@ -9108,14 +9242,21 @@ client.set_event_callback('paint', function()
 
         ::continue_label::
     end
-end)
+end
 
+if cb_ok and callbacks and callbacks.callback then
+    callbacks.callback('paint', paint_handler, { alive_only = true, require_login = true })
+end
 
-client.set_event_callback('round_start', function()
+local function round_start_handler(ev)
     g_net_data = {}
     g_sim_ticks = {}
     g_esp_data = {}
-end)]]
+end
+
+if cb_ok and callbacks and callbacks.callback then
+    callbacks.callback('round_start', round_start_handler, { alive_only = true, require_login = true })
+end]]
 __bundle["require/features/paint/minimum_damage"] = [[local menu_setup = require("require/abc/menu_setup")
 
 local references = {
@@ -9125,7 +9266,8 @@ local references = {
 
 local screen_size = { client.screen_size() }
 
-client.set_event_callback('paint', function()
+local cb_ok, callbacks = pcall(require, "require/abc/callbacks")
+local function paint_handler(ev)
 
     if not ui.get(menu_setup.ui.paint_minimum_damage) then return end
     
@@ -9136,8 +9278,11 @@ client.set_event_callback('paint', function()
         renderer.text(screen_size[1] / 2 + 2, screen_size[2] / 2 - 14, 255, 255, 255, 225, "d", 0, ui.get(references.minimum_damage_override[3]) .. "")
     end
 
+end
 
-end)]]
+if cb_ok and callbacks and callbacks.callback then
+    callbacks.callback('paint', paint_handler, { alive_only = true, require_login = true })
+end]]
 __bundle["require/features/paint/onshot_skeleton"] = [[local chains = {{'head','neck'},{'neck','chest'},{'chest','stomach'},{'stomach','pelvis'},{'pelvis','l_hip'},{'l_hip','l_knee'},{'l_knee','l_foot'},{'pelvis','r_hip'},{'r_hip','r_knee'},{'r_knee','r_foot'},{'chest','l_shoulder'},{'l_shoulder','l_elbow'},{'l_elbow','l_hand'},{'chest','r_shoulder'},{'r_shoulder','r_elbow'},{'r_elbow','r_hand'}}
 local boxes = {head={names={'head','Head','HEAD'},idx={0}},neck={names={'neck','Neck'},idx={1}},chest={names={'chest','Chest','upper chest','Upper Chest'},idx={4,5,6}},stomach={names={'stomach','Stomach','abdomen','Abdomen'},idx={2,3}},pelvis={names={'pelvis','Pelvis','hip','Hip'},idx={2}},l_shoulder={names={'left shoulder','Left Shoulder','left upper arm','Left Upper Arm','LeftArm'},idx={17}},l_elbow={names={'left elbow','Left Elbow','left forearm','Left Forearm'},idx={18}},l_hand={names={'left hand','Left Hand'},idx={14}},r_shoulder={names={'right shoulder','Right Shoulder','right upper arm','Right Upper Arm','RightArm'},idx={15}},r_elbow={names={'right elbow','Right Elbow','right forearm','Right Forearm'},idx={16}},r_hand={names={'right hand','Right Hand'},idx={13}},l_hip={names={'left hip','Left Hip','left thigh','Left Thigh','LeftLeg'},idx={8}},l_knee={names={'left knee','Left Knee','left calf','Left Calf'},idx={10}},l_foot={names={'left foot','Left Foot'},idx={12}},r_hip={names={'right hip','Right Hip','right thigh','Right Thigh','RightLeg'},idx={7}},r_knee={names={'right knee','Right Knee','right calf','Right Calf'},idx={9}},r_foot={names={'right foot','Right Foot'},idx={11}}}
 
@@ -9182,7 +9327,8 @@ local function is_skeleton_enabled()
     return false
 end
 
-client.set_event_callback('aim_fire', function(ev)
+local cb_ok, callbacks = pcall(require, "require/abc/callbacks")
+local function aim_fire_handler(ev)
     if not is_skeleton_enabled() then sk.list = {} return end
     if not is_skeleton_enabled() then return end
     local target = ev and (ev.target or ev.target_index)
@@ -9192,15 +9338,14 @@ client.set_event_callback('aim_fire', function(ev)
     local now = globals.realtime and globals.realtime() or 0
     sk.list[#sk.list + 1] = {pts = pts, t = now}
     if #sk.list > 5 then table.remove(sk.list, 1) end
-end)
+end
 
-client.set_event_callback('paint', function()
+local function paint_handler(ev)
     if is_skeleton_enabled() then
         local now = globals.realtime and globals.realtime() or 0
         local hold = 2.2 * 0.8 * 3
         local fade = 2.2 * 0.8
         local total = hold + fade
-        
         local i = 1
         while i <= #sk.list do
             if now - (sk.list[i].t or 0) > total then
@@ -9209,9 +9354,7 @@ client.set_event_callback('paint', function()
                 i = i + 1
             end
         end
-        
         table.sort(sk.list, function(a, b) return (a.t or 0) < (b.t or 0) end)
-        
         local start = math.max(1, #sk.list - 2)
         for j = start, #sk.list do
             local it = sk.list[j]
@@ -9233,7 +9376,15 @@ client.set_event_callback('paint', function()
     else
         sk.list = {}
     end
-end)]]
+end
+
+if cb_ok and callbacks and callbacks.callback then
+    callbacks.callback('aim_fire', aim_fire_handler, { alive_only = true, require_login = true })
+    callbacks.callback('paint', paint_handler, { alive_only = true, require_login = true })
+else
+    client.set_event_callback('aim_fire', aim_fire_handler)
+    client.set_event_callback('paint', paint_handler)
+end]]
 __bundle["require/features/paint/performance_mode"] = [[
 
 
@@ -9806,7 +9957,8 @@ local function is_self_skeleton_enabled()
   return true
 end
 
-client.set_event_callback('paint',function()
+local cb_ok, callbacks = pcall(require, "require/abc/callbacks")
+local function paint_handler(ev)
   if not is_self_skeleton_enabled() then return end
   local lp = entity.get_local_player()
   if not lp then return end
@@ -9822,7 +9974,11 @@ client.set_event_callback('paint',function()
       if fx and tx then renderer.line(fx,fy,tx,ty,255,255,255,alpha) end
     end
   end
-end)]]
+end
+
+if cb_ok and callbacks and callbacks.callback then
+  callbacks.callback('paint', paint_handler, { alive_only = true, require_login = true })
+end]]
 __bundle["require/features/paint/skeletons"] = [[local chains = {{'head','neck'},{'neck','chest'},{'chest','stomach'},{'stomach','pelvis'},{'pelvis','l_hip'},{'l_hip','l_knee'},{'l_knee','l_foot'},{'pelvis','r_hip'},{'r_hip','r_knee'},{'r_knee','r_foot'},{'chest','l_shoulder'},{'l_shoulder','l_elbow'},{'l_elbow','l_hand'},{'chest','r_shoulder'},{'r_shoulder','r_elbow'},{'r_elbow','r_hand'}}
 local boxes = {head={names={'head','Head','HEAD'},idx={0}},neck={names={'neck','Neck'},idx={1}},chest={names={'chest','Chest','upper chest','Upper Chest'},idx={4,5,6}},stomach={names={'stomach','Stomach','abdomen','Abdomen'},idx={2,3}},pelvis={names={'pelvis','Pelvis','hip','Hip'},idx={2}},l_shoulder={names={'left shoulder','Left Shoulder','left upper arm','Left Upper Arm','LeftArm'},idx={17}},l_elbow={names={'left elbow','Left Elbow','left forearm','Left Forearm'},idx={18}},l_hand={names={'left hand','Left Hand'},idx={14}},r_shoulder={names={'right shoulder','Right Shoulder','right upper arm','Right Upper Arm','RightArm'},idx={15}},r_elbow={names={'right elbow','Right Elbow','right forearm','Right Forearm'},idx={16}},r_hand={names={'right hand','Right Hand'},idx={13}},l_hip={names={'left hip','Left Hip','left thigh','Left Thigh','LeftLeg'},idx={8}},l_knee={names={'left knee','Left Knee','left calf','Left Calf'},idx={10}},l_foot={names={'left foot','Left Foot'},idx={12}},r_hip={names={'right hip','Right Hip','right thigh','Right Thigh','RightLeg'},idx={7}},r_knee={names={'right knee','Right Knee','right calf','Right Calf'},idx={9}},r_foot={names={'right foot','Right Foot'},idx={11}}}
 
@@ -10102,7 +10258,8 @@ for i, item in ipairs({
     end
 end
 
-client.set_event_callback("paint", function()
+local cb_ok, callbacks = pcall(require, "require/abc/callbacks")
+local function paint_handler(ev)
     local sw, sh = client.screen_size()
     if not sw or not sh then return end
 
@@ -10152,7 +10309,11 @@ client.set_event_callback("paint", function()
     local anim_suf = animated_text_lr(3.5, mr, mg, mb, ma, suffix)
     renderer.text(left, base_y, 255,255,255,255, "", 0, anim_main)
     renderer.text(sx, base_y, mr, mg, mb, ma, "", 0, anim_suf)
-end)
+end
+
+if cb_ok and callbacks and callbacks.callback then
+    callbacks.callback('paint', paint_handler, { alive_only = true, require_login = true })
+end
 ]]
 __bundle["require/features/paint/third_person_distance"] = [[local menu_setup = require("require/abc/menu_setup")
 local T = require("require/help/time")
@@ -10387,7 +10548,10 @@ local function draw_watermark()
 	end
 end
 
-client.set_event_callback('paint', draw_watermark)
+local cb_ok, callbacks = pcall(require, "require/abc/callbacks")
+if cb_ok and callbacks and callbacks.callback then
+	callbacks.callback('paint', draw_watermark, { alive_only = true, require_login = true })
+end
 ]]
 __bundle["require/features/paint/world_hitmarker_plus"] = [[
 local menu_setup = require("require/abc/menu_setup")
@@ -10403,23 +10567,22 @@ local function is_world_hitmarker_enabled()
 	return false
 end
 
-client.set_event_callback('aim_fire', function(ev)
+local cb_ok, callbacks = pcall(require, "require/abc/callbacks")
+local function aim_fire_handler(ev)
 	if not is_world_hitmarker_enabled() then hit.shots = {} return end
 	if not is_world_hitmarker_enabled() then return end
 	local now = globals.realtime()
-	
 	hit.shots[#hit.shots + 1] = {impacts = {}, finished = false, t = now}
 	if #hit.shots > 12 then table.remove(hit.shots, 1) end
-end)
+end
 
-client.set_event_callback('bullet_impact', function(ev)
+local function bullet_impact_handler(ev)
 	if not is_world_hitmarker_enabled() then hit = {shots = {}, last = 0} return end
 	local me = entity.get_local_player()
 	if not me then return end
 	local shooter = client.userid_to_entindex(ev.userid or 0)
 	if shooter ~= me then return end
 	local now = globals.realtime()
-	
 	local shot
 	for i = #hit.shots, 1, -1 do
 		if not hit.shots[i].finished and now - (hit.shots[i].t or 0) < 1.2 then
@@ -10428,9 +10591,7 @@ client.set_event_callback('bullet_impact', function(ev)
 		end
 	end
 	if not shot then return end
-	
 	local ix, iy, iz = ev.x, ev.y, ev.z
-	
 	local ok_eye, ex, ey, ez = pcall(client.eye_position)
 	local dirx, diry, dirz = 0,0,0
 	if ok_eye and ex and ey and ez then
@@ -10438,27 +10599,23 @@ client.set_event_callback('bullet_impact', function(ev)
 		local len = math.sqrt(dirx*dirx + diry*diry + dirz*dirz)
 		if len > 0 then dirx, diry, dirz = dirx/len, diry/len, dirz/len end
 	end
-
-	
 	local hit_entity = false
 	local ok_trace, frac, ent = pcall(client.trace_line, me, ix - dirx*1, iy - diry*1, iz - dirz*1, ix + dirx*1, iy + diry*1, iz + dirz*1)
 	if ok_trace and ent and ent > 0 and ent ~= me then
 		if entity.is_enemy(ent) then hit_entity = true end
 	end
-
 	shot.impacts[#shot.impacts + 1] = {x = ix, y = iy, z = iz, t = now, r = 0, g = 235, b = 235, dir = {dirx, diry, dirz}, hit = hit_entity}
 	if hit_entity then
 		shot.finished = true
 	end
-end)
+end
 
-client.set_event_callback('paint', function()
+local function paint_handler(ev)
 	if is_world_hitmarker_enabled() then
 		local now = globals.realtime()
 		local hold = 5.5 * 3 * 0.8
 		local fade = 0.25 * 0.8
 		local total = hold + fade
-		
 		local i = 1
 		while i <= #hit.shots do
 			if now - (hit.shots[i].t or 0) > total then
@@ -10467,23 +10624,18 @@ client.set_event_callback('paint', function()
 				i = i + 1
 			end
 		end
-		
 		local all_impacts = {}
 		for _, shot in ipairs(hit.shots) do
 			for _, it in ipairs(shot.impacts) do
 				table.insert(all_impacts, it)
 			end
 		end
-		
 		table.sort(all_impacts, function(a, b) return (a.t or 0) < (b.t or 0) end)
-		
 		local start = math.max(1, #all_impacts - 4)
 		for j = start, #all_impacts do
 			local it = all_impacts[j]
-			
 			local draw_x, draw_y, draw_z = it.x, it.y, it.z
 			if not it.hit and it.dir then
-				
 				local ex = it.x + (it.dir[1] or 0) * 24
 				local ey = it.y + (it.dir[2] or 0) * 24
 				local ez = it.z + (it.dir[3] or 0) * 24
@@ -10506,7 +10658,13 @@ client.set_event_callback('paint', function()
 	else
 		hit = {shots = {}, last = 0}
 	end
-end)
+end
+
+if cb_ok and callbacks and callbacks.callback then
+	callbacks.callback('aim_fire', aim_fire_handler, { alive_only = true, require_login = true })
+	callbacks.callback('bullet_impact', bullet_impact_handler, { alive_only = true, require_login = true })
+	callbacks.callback('paint', paint_handler, { alive_only = true, require_login = true })
+end
 ]]
 __bundle["require/help/color"] = [[
 local function hex_to_rgba(hex)
@@ -11758,6 +11916,8 @@ safe_require("require/features/misc/enhance_osaa")
 safe_require("require/features/misc/roll")
 safe_require("require/features/misc/exploit_fakelag")
 safe_require("require/features/misc/walkbot")
+safe_require("require/features/misc/backstab_assist")
+safe_require("require/features/misc/spin_on_dead_enemies")
 
 
 
