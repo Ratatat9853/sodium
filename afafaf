@@ -1,14 +1,27 @@
 {
   "accounts": [
     {
+      "id": 1,
+      "username": "null",
       "register_code": "754745",
-      "registered": true,
-      "discord_id": "173404684621578240"
+      "registered": false,
+      "discord_id": null,
+      "created_at": "2025-12-14T12:34:56Z",
+      "updated_at": "2025-12-14T12:34:56Z",
+      "role": "user",
+      "last_login": null
     },
     {
-      "register_code": "null",
+      "id": 2,
+      "username": null,
+      "email": null,
+      "register_code": null,
       "registered": false,
-      "discord_id": "null"
+      "discord_id": null,
+      "created_at": "2025-12-14T12:35:00Z",
+      "updated_at": "2025-12-14T12:35:00Z",
+      "role": "user",
+      "last_login": null
     }
   ]
 }
