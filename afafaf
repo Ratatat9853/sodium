@@ -2,8 +2,8 @@
   "accounts": [
     {
       "register_code": "754745",
-      "registered": false,
-      "discord_id": "null"
+      "registered": true,
+      "discord_id": "173404684621578240"
     },
     {
       "register_code": "null",
