@@ -1,14 +1,1 @@
-{
-  "accounts": [
-    {
-      "register_code": "7UPF3jXMehlo",
-      "registered": true,
-      "discord_id": "123456789012345678"
-    },
-    {
-      "register_code": "AB9kQ2LmX7Pz",
-      "registered": false,
-      "discord_id": null
-    }
-  ]
-}
+abc123
