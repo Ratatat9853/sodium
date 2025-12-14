@@ -2,17 +2,6 @@
   "accounts": [
     {
       "id": 1,
-      "username": "null",
-      "register_code": "754745",
-      "registered": true,
-      "discord_id": "619876577215250434",
-      "created_at": "2025-12-14T12:34:56Z",
-      "updated_at": "2025-12-14T19:16:56.640Z",
-      "role": "user",
-      "last_login": null
-    },
-    {
-      "id": 2,
       "username": null,
       "email": null,
       "register_code": "CcnjpFYErdUq",
