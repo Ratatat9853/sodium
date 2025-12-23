@@ -21,6 +21,17 @@
       "updated_at": "2025-12-23T18:48:44.549Z",
       "role": "user",
       "last_login": null
+    },
+    {
+      "id": 3,
+      "registered_code": "mCoriw5XIhFH",
+      "hwid": null,
+      "registered": false,
+      "discord_id": null,
+      "created_at": "2025-12-23T18:58:48.523Z",
+      "updated_at": "2025-12-23T18:58:48.523Z",
+      "role": "user",
+      "last_login": null
     }
   ]
 }
