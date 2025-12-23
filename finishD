@@ -4,10 +4,10 @@
       "id": 1,
       "registered_code": "LkBMsq6qEPP0",
       "hwid": null,
-      "registered": true,
-      "discord_id": "173404684621578240",
+      "registered": false,
+      "discord_id": "null",
       "created_at": "2025-12-23T08:30:01.305Z",
-      "updated_at": "2025-12-23T08:30:11.748Z",
+      "updated_at": "2025-12-23T08:30:17.347Z",
       "role": "user",
       "last_login": null
     }
